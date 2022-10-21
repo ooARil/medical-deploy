@@ -1,8 +1,25 @@
 version: '2.4'
 
 services:
+  rabbitmq:
+    image: rabbitmq:3.10-management
+    container_name: rabbitmq
+    hostname: 'rabbitmq'
+    restart: always
+    healthcheck:
+      test: rabbitmq-diagnostics ping
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
   message-analyzer:
     image: application/message-analyzer:simple
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 20s
@@ -11,11 +28,13 @@ services:
     environment:
       SERVER_PORT: 8080
     ports:
-      - 8092:8080
+      - "8081:8080"
 
   medical-monitoring:
     image: application/medical-monitoring:simple
     depends_on:
+      rabbitmq:
+        condition: service_healthy
       message-analyzer:
         condition: service_healthy
     healthcheck:
@@ -26,21 +45,44 @@ services:
     environment:
       SERVER_PORT: 8080
     ports:
-      - 8093:8080
+      - "8082:8080"
 
-  person-service:
-    image: application/person-service:simple
+  consumer-queue:
+    image: application/consumer-queue:simple
     depends_on:
+      rabbitmq:
+        condition: service_healthy
       message-analyzer:
         condition: service_healthy
       medical-monitoring:
         condition: service_healthy
-#    healthcheck:
-#      test: [ "CMD", "curl", "-f", "http://localhost:8080/actuator/health" ]
-#      interval: 20s
-#      timeout: 10s
-#      retries: 3
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/actuator/health" ]
+      interval: 20s
+      timeout: 10s
+      retries: 3
     environment:
       SERVER_PORT: 8080
     ports:
-      - 8091:8080
+      - "8083:8080"
+
+  person-service:
+    image: application/person-service:simple
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      message-analyzer:
+        condition: service_healthy
+      medical-monitoring:
+        condition: service_healthy
+      consumer-queue:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/actuator/health" ]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+    environment:
+      SERVER_PORT: 8080
+    ports:
+      - "8084:8080"
